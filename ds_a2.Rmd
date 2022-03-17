@@ -1,0 +1,237 @@
+---
+title: "Data Science 1 : A2"
+author: "Abigail Chen"
+output: pdf_document
+---
+ 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(factoextra)
+library(ggplot2)
+library(glmnet)
+library(pls)
+library(tidyverse)                                                                                    
+library(tinytex)
+
+theme_set(theme_minimal())
+```
+
+# Exercise Part 1
+
+Consider the simplest possible regression model 
+$$ Y_i = \beta_0 + \epsilon_i $$
+where $\epsilon_i$ _i = 1,...,n_ are independent and identically distributed random variables with $E(\epsilon_i)=0$ and $Var(\epsilon_i)=\sigma^2$. The ridge estimator of $\beta_0$ solves. 
+
+$$\min_{b}[\sum_{i = 1}^n(Y_i - b)^2+\lambda b^2 ]$$
+For some $\lambda\ge0$. In the special case $\lambda=0$,  the solution is of course the OLS estimator. 
+(a) Show that the solution to this problem is given by $\hat{beta}_0^{ridge}=\sum_{i = 1}^nY_i/(n+\lambda)$. Compare this to the OLS estimator $\hat{beta}_0^{OLS}=\overline{Y}$. 
+
+
+\begin{split}
+\min_{b}[\sum_{i = 1}^n(Y_i - b)^2+\lambda b^2 ] = \frac{\partial }{\partial b}[\sum_{i = 1}^nY_i^2  -2b \sum_{i = 1}^nY_i + b^2n +\lambda b^2 ] = 0 
+\\ 
+-2\sum_{i = 1}^nY_i + 2bn + 2\lambda b = 0 \\
+-2\sum_{i = 1}^nY_i + 2b(n+ \lambda) = 0 \\
+\beta_{0}^{ridge} = \frac{\sum_{i = 1}^nY_i}{n+ \lambda} \\
+
+\end{split}
+
+
+
+(b) Suppose that $\beta_0=1$ and $\epsilon\sim N(0,\sigma^2)$ with $\sigma^2=4$. Generate a sample of size _n = 10_ from a model and compute $\hat{beta}_0^{ridge}$ for a grid $\lambda$ values over the interval $[0, 20]$. 
+
+
+```{r}
+sampleBeta <- function(len_beta) {
+    4 / seq(len_beta)^2
+}
+functionyx <- function(xvalue) {
+    beta <- sampleBeta(dim(xvalue)[2])
+    xvalue %*% beta
+}
+
+```
+
+```{r}
+sim <- function(xgen, x0 = 0.2, lambdas = seq(0, 20, 1)) {
+    # sample generator
+    xvalue <- xgen()
+    y_e <- functionyx(xvalue)
+    yvalue <- y_e + rnorm(length(y_e)) * 4
+
+    
+    # x0 value generator
+    x_check <- matrix(x0, ncol = dim(xvalue)[2])
+
+    map_df(lambdas, ~{
+        model <- glmnet(xvalue,  yvalue, alpha = 0, lambda = .x)
+        tibble(
+            lambda = .x,
+            fhat = as.numeric(predict(model, newx =   x_check )),
+            error = as.numeric(functionyx(  x_check )) - fhat
+        )
+    })
+}
+```
+
+
+```{r}
+sim_visualizer <- function(results) {
+    group_by(results, lambda) %>% 
+    summarise(bias2 = mean(error)^2, var = var(fhat)) %>% 
+    mutate(MSE = bias2 + var) %>% 
+    pivot_longer(bias2:MSE, names_to = "metric") %>% 
+    mutate(metric = factor(metric, levels = c("bias2", "var", "MSE"))) %>% 
+    ggplot(aes(lambda, value, color = metric)) + geom_line(size = 2)
+}
+```
+
+
+(c) Repeat part _b)_, say 1000 times so that you end up with 1000 estiamtes of $\beta_0$ for all the $\lambda$ values that you have picked. For each value of $\lambda$, compute $bias^2[\hat{beta}_0^{ridge}]$, $Var[\hat{beta}_0^{ridge}]$ and $MSE[\hat{beta}_0^{ridge}]=bias^2[\hat{beta}_0^{ridge}]+Var[\hat{beta}_0^{ridge}]$.
+
+```{r}
+indie <- function(n = 10, p = 1) {
+    matrix(rnorm(n * p), nrow = n, ncol = 2)
+}
+
+```
+
+```{r warning =FALSE}
+# repeat for 1000 times 
+sim(xgen = indie)
+sim_count <- 1000
+sim_2<- map_df(
+    seq(sim_count),
+    sim,
+    xgen = indie
+)
+```
+
+
+(d) Plot  $bias^2[\hat{beta}_{0}^{ridge}]$, $Var[\hat{beta}_{0}^{ridge}]$ and $MSE[\hat{beta}_{0}^{ridge}]$ as a function of $\lambda$ and interpret the result.
+
+```{r}
+sim_visualizer(sim_2)
+```
+
+This figure shows us the increase for bias 2 and the decrease for the variance.
+
+# Exercise Part 2
+
+Let X and Y be two random variables with zero mean. The population version of the optimization problem that defines the first principal component of the two variables is
+
+$$ \max_{u1, u2} Var(u_1 X + u_2 Y)$$
+
+Subject to $$ u_1^2  + u_2^2 = 1$$
+
+The following questions ask you to examine some insightful special cases.
+
+(a) Suppose that _Var(X)_ > _Var(Y)_ and _cov(X, Y) = E(XY) = 0_. Derive the first principle component vector. Draw an illustrative picture and explain the result intuitively. (Hint: expand the variance formula and substitute the constraint.Then carry out the minimization.)
+
+\begin{split}
+Var(u_1 X + u_2 Y) = u_1^2 Var(X) + 2u_1u_2 Cov(X,Y) + u_2^2Var(Y) \\
+Cov(X,Y) = 0 \\
+u_1^2 Var(X) + 2u_1u_2 0 + u_2^2Var(Y) \\
+\text{This is what we'll get} \\
+u_1^2 Var(X)+ u_2^2Var(Y) \\
+\newline
+u_1^2  + u_2^2 = 1 \\ 
+u_1^2 = 1 - u_2^2 \\
+\newline
+(1 - u_2^2) Var(X)+ u_2^2Var(Y) = 0 \\
+Var(X) - u_2^2Var(X) +  u_2^2Var(Y) = 0 \\
+\frac{\partial }{\partial u_2}(Var(X) - u_2^2Var(X) +  u_2^2Var(Y)) = 0 \\
+- 2u_2Var(X) + 2u_2Var(Y) = 0 \\
+2u_2(-Var(X) + Var(Y)) = 0 \\
+u_2 = 0
+\newline
+u_1^2  + u_2^2 = 1 \\
+u_1^2 + 0 = 1 \\
+u_1^2 = 1 \\
+\sqrt{u_1^2} = \sqrt{1} \\
+u_1 = \pm 1 \\
+\text {Here is the result} \\
+(u_1, u_2) \\
+(1, 0), (-1, 0) \\
+\text {This shows the result after substitution } u_2^2 \\
+(u_1, u_2) \\
+(0, 1) , (0, -1) \\
+\end{split}
+
+After expanding the variance formula and substituting the constraint. The minimization is carried out and this is what we get $(1, 0), (-1, 0), (0, 1)$ and $(0, -1)$.  
+
+
+(b) Suppose that _Var(X) = Var(Y) = 1_ (principle component analysis is often performed after standardization) and _cov(X, Y ) = E(XY ) = 0_. Show that in this case any vector (u1, u2) with length 1 is a principal component vector (i.e., it solves the problem above). Explain intuitively this puzzling result. (A picture can help.)
+
+\begin{split}
+
+Var(X) = Var(Y) = 1\\
+cov(X,Y) = E(XY) = 0 \\
+Var(u_1 X + u_2 Y) = u_1^2 Var(X) + 2u_1u_2 Cov(X,Y) + u_2^2Var(Y) \\
+u_1^2 Var(X)+ u_2^2Var(Y) \\
+\newline
+u_1^2  + u_2^2 = 1 \\
+u_2^2 = 1 - u_1^2 \\
+\newline
+u_1^2 Var(X) + (1-u_1^2)Var(Y) = 0 \\
+u_1^2 Var(X) + Var(Y) -u_1^2Var(Y) = 0 \\
+\frac{\partial }{\partial u_1}(u_1^2 Var(X) + Var(Y) -u_1^2Var(Y)) = 0 \\
+2u_1 Var(X) - 2u_1Var(Y) = 0 \\
+2u_1 (Var(X) - Var(X)) = 0 \\
+2u_1 *0 = 0 \\
+0=0
+\end{split}
+
+
+Here we'll see that  _Var(X) = Var(Y) = 1_, after the principle component analysis(PCA) is performed after standardization.  We want to minimize the ellipse size from OLS and circle simultaneously in the given ridge regression. 
+
+# Exercise Part 3
+ISLR Exercise 3 in Section 6.8: 
+Suppose we estimate the regression coefficients in a linear regression model by minimizing for a particular value of s. For parts (a) through (e), indicate which of i. through v. is correct. Justify your answer.
+
+$$\sum_{i=1}^{n}(y_{i} - {\beta_{0}} - \sum_{j=1}^{p}{\beta_{i}} x_{ij})^2$$
+Subject to 
+$$\sum_{j=1}^{p}|\beta_{j}| \le s$$
+
+
+- i. Increase initially, and then eventually start decreasing in an inverted U shape.
+
+
+- ii. Decrease initially, and then eventually start increasing in a U shape.
+
+- iii. Steadily increase.
+
+- iv. Steadily decrease.
+
+- v. Remain constant.
+
+(a) As we increase s from 0, the training RSS will:
+When we increase _s_ from 0, the training RSS will 
+_(iv) steadily decrease _
+since the RSS is subject to the given constraint.  Our model becomes more flexible as the _s_ gets larger, and the restriction of the beta is reducing thus minimizing our RSS. 
+
+
+(b) Repeat (a) for test RSS.
+
+As we increase _s_ from 0, the test RSS will 
+_(ii) initially decrease_ 
+and then increase, making a U shape.  If the constraint loosens, the model flexibility and the _s_ will both increase.  
+
+(c) Repeat (a) for variance.
+
+As we increase _s_ from 0 the variance 
+_(iii) steadily increase_,
+because the increase in _s_ from 0 means a shrinkage reduction, where lambda is decreasing, resulting to an increase in model flexibility. 
+
+(d) Repeat (a) for (squared) bias.
+As we increase _s_ from 0, squared bias will 
+_(iv) steadily decrease/_
+because as the model flexibility increases the bias decreases.
+
+(e) Repeat (a) for the irreducible error.
+As we increase _s_ from 0, the irreducible error will, 
+_(v) remain constant_
+because it is independent of the model parameters making it constant all throughout.
